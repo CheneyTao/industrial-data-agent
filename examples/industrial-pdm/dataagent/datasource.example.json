@@ -1,0 +1,10 @@
+{
+  "name": "Industrial PdM Demo",
+  "type": "mysql",
+  "host": "127.0.0.1",
+  "port": 3307,
+  "databaseName": "industrial_pdm",
+  "username": "industrial",
+  "password": "replace_with_env_password",
+  "description": "PdM 来源事实层加明确标注的合成演示业务层；所有 synthetic_* 指标必须说明为合成。"
+}

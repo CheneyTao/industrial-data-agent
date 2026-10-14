@@ -1,0 +1,10 @@
+# Application-only release using a locally verified, unchanged dependency image.
+# The normal Dockerfile remains the full clean-build path.
+ARG RUNTIME_IMAGE
+FROM ${RUNTIME_IMAGE}
+ARG BUILD_REVISION=unpackaged-source
+ENV DATAAGENT_BUILD_REVISION=${BUILD_REVISION}
+WORKDIR /app
+COPY pyproject.toml README.md LICENSE ./
+COPY src ./src
+RUN pip install --no-cache-dir --no-deps .

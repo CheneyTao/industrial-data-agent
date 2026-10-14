@@ -1,0 +1,30 @@
+{
+  "source_tables": [
+    "pdm_machines",
+    "pdm_telemetry",
+    "pdm_errors",
+    "pdm_maint",
+    "pdm_failures"
+  ],
+  "semantic_tables": [
+    "dim_machine_models"
+  ],
+  "synthetic_demo_tables": [
+    "synthetic_work_orders",
+    "synthetic_parts_usage",
+    "synthetic_daily_operations",
+    "synthetic_fault_reports"
+  ],
+  "recommended_views": [
+    "v_machine_daily_kpi",
+    "v_machine_reliability",
+    "v_monthly_operations_kpi",
+    "v_work_order_kpi",
+    "v_event_timeline",
+    "v_failure_rca_evidence"
+  ],
+  "rag_only_tables": [
+    "synthetic_operator_logs",
+    "synthetic_maintenance_notes"
+  ]
+}

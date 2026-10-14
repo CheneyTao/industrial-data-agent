@@ -1,0 +1,169 @@
+/*
+ * Copyright 2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import { describe, expect, it } from 'vitest';
+import { TextType, type GraphNodeResponse } from '../services/graph/index';
+import {
+	groupWorkflowTimeline,
+	segmentWorkflowContent,
+	markWorkflowFailure,
+	workflowStepStatus,
+} from './workflowTimeline';
+
+function event(
+	nodeName: string,
+	text: string,
+	overrides: Partial<GraphNodeResponse> = {},
+): GraphNodeResponse {
+	return {
+		agentId: '1',
+		threadId: 'run-1',
+		nodeName,
+		textType: TextType.TEXT,
+		text,
+		error: false,
+		complete: false,
+		...overrides,
+	};
+}
+
+describe('groupWorkflowTimeline', () => {
+	it('preserves repeated node attempts as separate steps', () => {
+		const groups = groupWorkflowTimeline([
+			[event('SqlExecuteNode', 'first', { stepId: 'sql-1', attempt: 1 })],
+			[event('SqlGenerateNode', 'retry', { stepId: 'generate-2', attempt: 2 })],
+			[event('SqlExecuteNode', 'second', { stepId: 'sql-3', attempt: 2 })],
+		]);
+
+		expect(groups.map((group) => group.stepId)).toEqual([
+			'sql-1',
+			'generate-2',
+			'sql-3',
+		]);
+		expect(groups[2]?.attempt).toBe(2);
+	});
+
+	it('uses the latest result payload from one step', () => {
+		const table = event('SqlExecuteNode', '{"displayStyle":{"type":"table"}}', {
+			stepId: 'sql-1',
+			attempt: 1,
+			textType: TextType.RESULT_SET,
+		});
+		const chart = event('SqlExecuteNode', '{"displayStyle":{"type":"bar"}}', {
+			stepId: 'sql-1',
+			attempt: 1,
+			textType: TextType.RESULT_SET,
+		});
+		const groups = groupWorkflowTimeline([[table], [chart]]);
+		const latest = [...(groups[0]?.items || [])]
+			.reverse()
+			.find((item) => item.textType === TextType.RESULT_SET);
+
+		expect(groups).toHaveLength(1);
+		expect(latest?.text).toContain('"bar"');
+	});
+
+	it('attaches a legacy result-only block to its preceding node', () => {
+		const groups = groupWorkflowTimeline([
+			[event('SqlExecuteNode', '执行SQL')],
+			[
+				event('SqlExecuteNode', '{"rows":1}', {
+					textType: TextType.RESULT_SET,
+				}),
+			],
+		]);
+
+		expect(groups).toHaveLength(1);
+		expect(groups[0]?.items).toHaveLength(2);
+	});
+});
+
+describe('segmentWorkflowContent', () => {
+	it('keeps streamed SQL as a code segment between status messages', () => {
+		const segments = segmentWorkflowContent([
+			event('SqlGenerateNode', '开始生成SQL...\n'),
+			event('SqlGenerateNode', 'select', { textType: TextType.SQL }),
+			event('SqlGenerateNode', ' * from users', {
+				textType: TextType.SQL,
+			}),
+			event('SqlGenerateNode', 'SQL生成完成\n'),
+		]);
+
+		expect(segments.map((segment) => segment.kind)).toEqual([
+			'text',
+			'code',
+			'text',
+		]);
+		expect(segments[1]?.items.map((item) => item.text).join('')).toBe(
+			'select * from users',
+		);
+	});
+
+	it('keeps executed SQL separate from surrounding execution text', () => {
+		const segments = segmentWorkflowContent([
+			event('SqlExecuteNode', '开始执行SQL...\n'),
+			event('SqlExecuteNode', '执行SQL查询：\n'),
+			event('SqlExecuteNode', 'select 1\n', { textType: TextType.SQL }),
+			event('SqlExecuteNode', '执行SQL完成\n'),
+			event('SqlExecuteNode', 'SQL查询结果：\n'),
+		]);
+
+		expect(segments).toHaveLength(3);
+		expect(segments[0]?.items).toHaveLength(2);
+		expect(segments[1]?.kind).toBe('code');
+		expect(segments[1]?.items[0]?.textType).toBe(TextType.SQL);
+		expect(segments[2]?.items).toHaveLength(2);
+	});
+
+	it('does not merge adjacent code written in different languages', () => {
+		const segments = segmentWorkflowContent([
+			event('MixedNode', 'select 1', { textType: TextType.SQL }),
+			event('MixedNode', 'print(1)', { textType: TextType.PYTHON }),
+		]);
+
+		expect(segments).toHaveLength(2);
+		expect(segments.every((segment) => segment.kind === 'code')).toBe(true);
+	});
+});
+
+describe('workflow terminal status', () => {
+	it('retains a failed step after persistence without marking earlier steps failed', () => {
+		const blocks = [
+			[event('SqlExecuteNode', '10 rows')],
+			[event('ReportGeneratorNode', '开始生成报告...')],
+		];
+		markWorkflowFailure(blocks, 'Evidence review failed');
+		const groups = groupWorkflowTimeline(JSON.parse(JSON.stringify(blocks)));
+		expect(workflowStepStatus(groups[0]!, false, true)).toBe('done');
+		expect(workflowStepStatus(groups[1]!, true, true)).toBe('failed');
+		expect(groups[1]!.items.at(-1)?.text).toBe('Evidence review failed');
+	});
+	it('does not claim that a closed historical report step published a report', () => {
+		const [group] = groupWorkflowTimeline([[event('ReportGeneratorNode', '开始生成报告...')]]);
+		expect(workflowStepStatus(group!, true, false)).toBe('active');
+		expect(workflowStepStatus(group!, true, true)).toBe('incomplete');
+	});
+	it('preserves successful reports and records failed SQL attempts separately', () => {
+		const groups = groupWorkflowTimeline([
+			[event('SqlExecuteNode', 'failed', { error: true })],
+			[event('SqlExecuteNode', 'success')],
+			[event('ReportGeneratorNode', '# Verified report', { textType: TextType.MARK_DOWN })],
+		]);
+		expect(groups.map((group, index) => workflowStepStatus(group, index === 2, true)))
+			.toEqual(['failed', 'done', 'done']);
+		expect(() => markWorkflowFailure([], 'Connection failed')).not.toThrow();
+	});
+});

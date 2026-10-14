@@ -1,0 +1,11 @@
+# Additive BI runtime on the locally verified full DataAgent image.
+# The original Dockerfile remains the clean-build path.
+ARG RUNTIME_IMAGE
+FROM ${RUNTIME_IMAGE}
+WORKDIR /app
+COPY pyproject.toml /tmp/bi-pyproject.toml
+RUN python -c "import tomllib; a=tomllib.load(open('/app/pyproject.toml','rb'))['project']; b=tomllib.load(open('/tmp/bi-pyproject.toml','rb'))['project']; assert a['dependencies']==b['dependencies'], 'Core dependencies changed: use the full build'; x=a.get('optional-dependencies',{}); y=b.get('optional-dependencies',{}); assert set(x)<=set(y); assert all(x[k]==y[k] for k in x if k!='full'); assert set(y['full'])-set(x['full']) <= {'duckdb>=1.4,<2','pandas>=2.2,<3'}; assert not set(x['full'])-set(y['full'])"
+RUN pip install --no-cache-dir 'duckdb>=1.4,<2' 'pandas>=2.2,<3'
+COPY pyproject.toml README.md LICENSE ./
+COPY src ./src
+RUN pip install --no-cache-dir --no-deps . && pip check

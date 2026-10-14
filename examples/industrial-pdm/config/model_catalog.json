@@ -1,0 +1,39 @@
+{
+  "version": "1.0",
+  "authority": "demo_semantic_alias",
+  "description": "The public sample exposes only model1-model4. These neutral Chinese names improve readability without claiming a real vendor, specification, capability tier, or field designation.",
+  "models": [
+    {
+      "source_model_code": "model1",
+      "display_name_zh": "A 型机组",
+      "display_name_en": "Series A unit",
+      "sort_order": 1,
+      "is_demo_alias": 1,
+      "note": "中性演示别名；原始来源仅提供 model1。"
+    },
+    {
+      "source_model_code": "model2",
+      "display_name_zh": "B 型机组",
+      "display_name_en": "Series B unit",
+      "sort_order": 2,
+      "is_demo_alias": 1,
+      "note": "中性演示别名；原始来源仅提供 model2。"
+    },
+    {
+      "source_model_code": "model3",
+      "display_name_zh": "C 型机组",
+      "display_name_en": "Series C unit",
+      "sort_order": 3,
+      "is_demo_alias": 1,
+      "note": "中性演示别名；原始来源仅提供 model3。"
+    },
+    {
+      "source_model_code": "model4",
+      "display_name_zh": "D 型机组",
+      "display_name_en": "Series D unit",
+      "sort_order": 4,
+      "is_demo_alias": 1,
+      "note": "中性演示别名；原始来源仅提供 model4。"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+machine_id,model,amount,status
+001,model_A,10,ok
+002,model_A,20,error
+003,model_B,30,ok
+004,model_B,40,error
+005,model_A,50,ok
+006,model_B,60,ok
+007,model_A,70,error
+008,model_B,80,ok
+009,model_A,90,ok
+010,model_B,100,error

@@ -1,0 +1,70 @@
+services:
+  import-data:
+    image: mysql:8.0
+    restart: "no"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        mkdir -p /data/original /data/synthetic &&
+        cp -f /source/original/*.csv /data/original/ &&
+        cp -f /source/synthetic/*.csv /data/synthetic/ &&
+        cp -f /source/synthetic/manifest.json /data/synthetic/
+    volumes:
+      - industrial_pdm_import_data:/data
+      - ./original:/source/original:ro
+      - ./synthetic:/source/synthetic:ro
+
+  mysql:
+    image: mysql:8.0
+    container_name: ${MYSQL_CONTAINER_NAME:-industrial-pdm-mysql}
+    restart: unless-stopped
+    command:
+      - --local-infile=1
+      - --secure-file-priv=/data
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change_me_root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-industrial_pdm}
+      MYSQL_USER: ${MYSQL_USER:-industrial}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change_me_industrial}
+    ports:
+      - "127.0.0.1:${MYSQL_HOST_PORT:-3307}:3306"
+    depends_on:
+      import-data:
+        condition: service_completed_successfully
+    volumes:
+      - industrial_pdm_mysql_data:/var/lib/mysql
+      - industrial_pdm_import_data:/data
+      - ./mysql/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./mysql/docker_import.sql:/docker-entrypoint-initdb.d/02_import.sql:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          mysql --protocol=tcp -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD
+          --silent --skip-column-names
+          -e "SELECT IF(
+          (SELECT COUNT(*) FROM industrial_pdm.dim_machine_models)=4 AND
+          (SELECT COUNT(*) FROM industrial_pdm.pdm_machines)=100 AND
+          (SELECT COUNT(*) FROM industrial_pdm.pdm_telemetry)=876100 AND
+          (SELECT COUNT(*) FROM industrial_pdm.pdm_errors)=3919 AND
+          (SELECT COUNT(*) FROM industrial_pdm.pdm_maint)=3286 AND
+          (SELECT COUNT(*) FROM industrial_pdm.pdm_failures)=761 AND
+          (SELECT COUNT(*) FROM industrial_pdm.synthetic_fault_reports)=761 AND
+          (SELECT COUNT(*) FROM industrial_pdm.synthetic_operator_logs)=6587 AND
+          (SELECT COUNT(*) FROM industrial_pdm.synthetic_maintenance_notes)=3304 AND
+          (SELECT COUNT(*) FROM industrial_pdm.synthetic_work_orders)=3304 AND
+          (SELECT COUNT(*) FROM industrial_pdm.synthetic_parts_usage)=5417 AND
+          (SELECT COUNT(*) FROM industrial_pdm.synthetic_daily_operations)=36500 AND
+          (SELECT COUNT(*) FROM industrial_pdm.pdm_machines m LEFT JOIN industrial_pdm.dim_machine_models d ON d.source_model_code=m.model WHERE d.source_model_code IS NULL)=0,
+          1,0)" 2>/dev/null | grep -qx 1
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+volumes:
+  industrial_pdm_mysql_data:
+  industrial_pdm_import_data:

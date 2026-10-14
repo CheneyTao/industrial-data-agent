@@ -1,0 +1,7 @@
+# Keep native extensions in the immutable image; /tmp remains noexec at runtime.
+# These versions match the locally verified BI backend analytics dependencies.
+ARG SANDBOX_BASE=agentscope-registry.ap-southeast-1.cr.aliyuncs.com/agentscope/runtime-sandbox-base:latest
+FROM ${SANDBOX_BASE}
+RUN python -m pip install --no-cache-dir pandas==2.3.3 numpy==2.4.6 packaging==26.3 \
+    && python -m pip check \
+    && python -c "import pandas, numpy; print(pandas.__version__, numpy.__version__)"

@@ -1,0 +1,66 @@
+{
+  "metrics": [
+    {
+      "id": "failure_count",
+      "name": "故障次数",
+      "source": "pdm_failures",
+      "formula": "COUNT(*)",
+      "dimensions": ["machineID", "failure", "model_code", "model_name", "month"]
+    },
+    {
+      "id": "error_count",
+      "name": "错误事件次数",
+      "source": "pdm_errors",
+      "formula": "COUNT(*)",
+      "dimensions": ["machineID", "errorID", "month"]
+    },
+    {
+      "id": "failure_rate_per_1000_hours",
+      "name": "每千设备小时故障率",
+      "source": "pdm_failures + pdm_telemetry",
+      "formula": "failure_count / telemetry_points * 1000",
+      "dimensions": ["machineID", "model_code", "model_name", "month"],
+      "limitations": "本数据集以小时遥测点近似设备运行小时，不能替代真实开机时长。"
+    },
+    {
+      "id": "sensor_robust_z",
+      "name": "传感器稳健异常分数",
+      "source": "pdm_telemetry",
+      "formula": "0.6745 * (x - rolling_median) / rolling_MAD",
+      "dimensions": ["machineID", "metric", "datetime"],
+      "limitations": "默认使用前 24 个遥测点作基线，MAD 为零时回退到滚动标准差。"
+    },
+    {
+      "id": "rca_confidence_score",
+      "name": "根因候选证据分",
+      "source": "telemetry + errors + maintenance + machines + component rules",
+      "formula": "weighted(component, metric_fit, anomaly, error, maintenance, age, temporal_precedence)",
+      "dimensions": ["machineID", "component", "candidate"],
+      "limitations": "这是候选排序分，不是因果概率。"
+    },
+    {
+      "id": "synthetic_oee",
+      "name": "合成设备综合效率 OEE",
+      "source": "synthetic_daily_operations",
+      "formula": "availability_pct * performance_pct * quality_pct / 10000",
+      "dimensions": ["machineID", "model_code", "model_name", "operation_date"],
+      "limitations": "产量、停机、能耗和 OEE 均为演示衍生值，不能用于真实经营决策。"
+    },
+    {
+      "id": "synthetic_maintenance_cost",
+      "name": "合成维修总成本",
+      "source": "synthetic_work_orders",
+      "formula": "SUM(labor_cost + parts_cost)",
+      "dimensions": ["machineID", "component", "work_order_type", "month"],
+      "limitations": "工时、单价和成本由确定性规则生成，不是财务记录。"
+    },
+    {
+      "id": "synthetic_downtime_hours",
+      "name": "合成停机小时",
+      "source": "synthetic_daily_operations or synthetic_work_orders",
+      "formula": "SUM(downtime_hours)",
+      "dimensions": ["machineID", "model_code", "model_name", "component", "operation_date"],
+      "limitations": "两个表分别表达日运营口径和工单口径，查询时必须说明所用口径。"
+    }
+  ]
+}

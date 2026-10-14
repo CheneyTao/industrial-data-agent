@@ -1,0 +1,1 @@
+-- Upload validation fixture only. SQL dump import is not supported.

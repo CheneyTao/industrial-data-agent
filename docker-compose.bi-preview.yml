@@ -1,0 +1,41 @@
+# Use only with `docker compose ... run --no-deps` as documented.
+# Do not `up` this override: the existing backend service must not be replaced.
+services:
+  backend:
+    image: dataagent-python-backend:bi-preview
+    environment:
+      DATAAGENT_SCANIA_DATA_DIR: /app/scania-source
+      DATAAGENT_SANDBOX_IMAGE: dataagent-python-sandbox:analytics
+      # Optional candidates/profiles must match the configured endpoint and models.
+      DATAAGENT_CHAT_FALLBACK_MODELS: &preview-chat-fallbacks '${DATAAGENT_CHAT_FALLBACK_MODELS:-[]}'
+      DATAAGENT_CHAT_REQUEST_PROFILES: &preview-chat-profiles '${DATAAGENT_CHAT_REQUEST_PROFILES:-[]}'
+      DATAAGENT_DASHBOARD_DATABASE_URL: sqlite:////app/industrial_pdm.sqlite
+      DATAAGENT_EMBEDDING_RECOVERY_INITIAL_DELAY_SECONDS: "86400"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+    volumes:
+      - dataagent-data:/app/data:ro
+      - ./work/bi-preview-docker/analysis-runs:/app/data/analysis-runs
+      - ./examples/industrial-pdm/generated/runtime/industrial_pdm.sqlite:/app/industrial_pdm.sqlite:ro
+      - type: bind
+        source: ${DATAAGENT_SCANIA_HOST_DATA_DIR:?Set DATAAGENT_SCANIA_HOST_DATA_DIR to the existing Scania source directory}
+        target: /app/scania-source
+        read_only: true
+  mcp:
+    image: dataagent-python-backend:bi-preview
+    environment:
+      DATAAGENT_SCANIA_DATA_DIR: /app/scania-source
+      DATAAGENT_SANDBOX_IMAGE: dataagent-python-sandbox:analytics
+      DATAAGENT_CHAT_FALLBACK_MODELS: *preview-chat-fallbacks
+      DATAAGENT_CHAT_REQUEST_PROFILES: *preview-chat-profiles
+      DATAAGENT_DASHBOARD_DATABASE_URL: sqlite:////app/industrial_pdm.sqlite
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+    volumes:
+      - dataagent-data:/app/data:ro
+      - ./work/bi-preview-docker/analysis-runs:/app/data/analysis-runs
+      - ./examples/industrial-pdm/generated/runtime/industrial_pdm.sqlite:/app/industrial_pdm.sqlite:ro
+      - type: bind
+        source: ${DATAAGENT_SCANIA_HOST_DATA_DIR:?Set DATAAGENT_SCANIA_HOST_DATA_DIR to the existing Scania source directory}
+        target: /app/scania-source
+        read_only: true

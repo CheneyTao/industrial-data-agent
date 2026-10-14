@@ -1,0 +1,135 @@
+{
+  "version": "1.0",
+  "score_meaning": "用于候选排序的证据分，不是概率，也不代表现场确认。",
+  "weights": {
+    "component_affinity": 0.20,
+    "metric_fit": 0.20,
+    "anomaly_strength": 0.20,
+    "error_signal": 0.15,
+    "maintenance_signal": 0.10,
+    "age_signal": 0.10,
+    "temporal_precedence": 0.05
+  },
+  "candidates": [
+    {
+      "name": "轴承磨损",
+      "components": ["comp1"],
+      "metrics": ["vibration", "rotate"],
+      "error_pattern": "present",
+      "maintenance_pattern": "absent",
+      "age_pattern": "old",
+      "mechanism": "磨损会增加摩擦与间隙，常伴随振动或转速波动增强。",
+      "recommended_action": "检查轴承游隙、温升与振动频谱，必要时更换并复测。"
+    },
+    {
+      "name": "润滑不足",
+      "components": ["comp1"],
+      "metrics": ["vibration", "pressure"],
+      "error_pattern": "either",
+      "maintenance_pattern": "absent",
+      "age_pattern": "either",
+      "mechanism": "润滑状态下降可能使摩擦和振动升高。",
+      "recommended_action": "核对润滑周期、油量和污染状态，补充或更换后复测。"
+    },
+    {
+      "name": "安装偏心",
+      "components": ["comp1"],
+      "metrics": ["rotate", "vibration"],
+      "error_pattern": "absent",
+      "maintenance_pattern": "recent",
+      "age_pattern": "young",
+      "mechanism": "安装或复装偏差可能形成周期性不平衡。",
+      "recommended_action": "复核安装同心度与动平衡，重新紧固后进行振动复测。"
+    },
+    {
+      "name": "负载过高",
+      "components": ["comp2"],
+      "metrics": ["rotate", "pressure", "volt"],
+      "error_pattern": "present",
+      "maintenance_pattern": "either",
+      "age_pattern": "either",
+      "mechanism": "持续高负载会放大转速、压力和电气侧波动。",
+      "recommended_action": "核对负载曲线与工况上限，降低负载后观察关键传感器。"
+    },
+    {
+      "name": "冷却不足",
+      "components": ["comp2"],
+      "metrics": ["pressure", "volt"],
+      "error_pattern": "present",
+      "maintenance_pattern": "absent",
+      "age_pattern": "old",
+      "mechanism": "散热能力下降可能使压力和电气负荷波动加剧。",
+      "recommended_action": "检查冷却回路、通风与堵塞情况，并在恢复后复测。"
+    },
+    {
+      "name": "密封老化",
+      "components": ["comp2"],
+      "metrics": ["pressure"],
+      "error_pattern": "absent",
+      "maintenance_pattern": "absent",
+      "age_pattern": "old",
+      "mechanism": "密封性能下降可能造成压力异常或泄漏。",
+      "recommended_action": "执行泄漏与保压检查，确认密封件状态。"
+    },
+    {
+      "name": "电气接触不良",
+      "components": ["comp3"],
+      "metrics": ["volt"],
+      "error_pattern": "present",
+      "maintenance_pattern": "either",
+      "age_pattern": "old",
+      "mechanism": "接触电阻变化可能造成电压瞬态和控制异常。",
+      "recommended_action": "检查端子、线束和接插件，紧固清洁后复测电压稳定性。"
+    },
+    {
+      "name": "传感器漂移",
+      "components": ["comp3"],
+      "metrics": ["volt", "pressure", "vibration", "rotate"],
+      "error_pattern": "absent",
+      "maintenance_pattern": "either",
+      "age_pattern": "either",
+      "mechanism": "测量链路漂移可能产生持续偏移但缺少对应设备错误。",
+      "recommended_action": "使用独立仪表交叉校准，核对零点、量程和采集链路。"
+    },
+    {
+      "name": "控制参数不匹配",
+      "components": ["comp3"],
+      "metrics": ["rotate", "volt"],
+      "error_pattern": "either",
+      "maintenance_pattern": "recent",
+      "age_pattern": "young",
+      "mechanism": "维护后或工况变化后的参数不匹配可能引起调节振荡。",
+      "recommended_action": "核对控制器配置与维护前后参数，按稳定工况重新整定。"
+    },
+    {
+      "name": "部件疲劳",
+      "components": ["comp4"],
+      "metrics": ["vibration", "rotate"],
+      "error_pattern": "present",
+      "maintenance_pattern": "absent",
+      "age_pattern": "old",
+      "mechanism": "累积载荷可能造成材料疲劳并伴随振动或转速异常。",
+      "recommended_action": "检查疲劳裂纹、磨损与寿命记录，必要时更换。"
+    },
+    {
+      "name": "对中偏差",
+      "components": ["comp4"],
+      "metrics": ["vibration", "rotate"],
+      "error_pattern": "absent",
+      "maintenance_pattern": "recent",
+      "age_pattern": "either",
+      "mechanism": "轴系对中偏差会产生周期振动和附加载荷。",
+      "recommended_action": "复核联轴器与轴系对中，校正后进行空载和带载复测。"
+    },
+    {
+      "name": "机械松动",
+      "components": ["comp4"],
+      "metrics": ["vibration"],
+      "error_pattern": "present",
+      "maintenance_pattern": "recent",
+      "age_pattern": "either",
+      "mechanism": "紧固件或连接部位松动可能导致振动放大和重复告警。",
+      "recommended_action": "检查基础、紧固件和连接件，按扭矩要求复紧后复测。"
+    }
+  ]
+}

@@ -1,0 +1,238 @@
+name: dataagent-python
+
+services:
+  # Persistent management database. This stores Agents, model configuration,
+  # datasource metadata, chat history and graph checkpoints; it is not an
+  # analytics datasource.
+  mysql:
+    image: mysql:8.0
+    container_name: dataagent-python-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DATAAGENT_MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: saa_data_agent
+      MYSQL_USER: dataagent
+      MYSQL_PASSWORD: ${DATAAGENT_MYSQL_PASSWORD:-dataagent}
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    ports:
+      - "${DATAAGENT_MYSQL_MANAGEMENT_PORT:-13307}:3306"
+    volumes:
+      - dataagent-mysql:/var/lib/mysql
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h 127.0.0.1 -u root -p$${MYSQL_ROOT_PASSWORD} --silent",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
+    restart: unless-stopped
+
+  # Low-latency hot memory for chat/message reads, bounded conversation
+  # context and HITL checkpoints. MySQL remains the durable source of truth.
+  redis:
+    image: redis:7.4-alpine
+    container_name: dataagent-python-redis
+    environment:
+      REDIS_PASSWORD: ${DATAAGENT_REDIS_PASSWORD:-dataagent}
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--appendfsync",
+        "everysec",
+        "--requirepass",
+        "${DATAAGENT_REDIS_PASSWORD:-dataagent}",
+      ]
+    ports:
+      - "${DATAAGENT_REDIS_PORT:-16379}:6379"
+    volumes:
+      - dataagent-redis:/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli ping | grep -q PONG",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+
+  # Upstream-compatible demo analytics datasource (product_db).
+  mysql-data:
+    image: mysql:8.0
+    container_name: dataagent-python-mysql-datasource
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DATAAGENT_DEMO_MYSQL_PASSWORD:-root}
+      MYSQL_DATABASE: product_db
+    command:
+      [
+        "--default-authentication-plugin=mysql_native_password",
+        "--character-set-server=utf8mb4",
+        "--collation-server=utf8mb4_unicode_ci",
+      ]
+    ports:
+      - "${DATAAGENT_DEMO_MYSQL_PORT:-13306}:3306"
+    volumes:
+      - dataagent-demo-mysql:/var/lib/mysql
+      - ./examples/sql/product_schema.sql:/docker-entrypoint-initdb.d/01-product-schema.sql:ro
+      - ./examples/sql/product_data.sql:/docker-entrypoint-initdb.d/02-product-data.sql:ro
+      - ./examples/sql/product_utf8_repair.sql:/docker-entrypoint-initdb.d/03-product-utf8-repair.sql:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h 127.0.0.1 -u root -p$${MYSQL_ROOT_PASSWORD} --silent",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
+    restart: unless-stopped
+
+  # Upstream-compatible demo analytics datasource (china_population_db).
+  postgres-data:
+    image: postgres:15
+    container_name: dataagent-python-postgres-datasource
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DATAAGENT_DEMO_POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${DATAAGENT_DEMO_POSTGRES_PORT:-15432}:5432"
+    volumes:
+      - dataagent-demo-postgres:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d china_population_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
+    restart: unless-stopped
+
+  sandbox-image:
+    image: ${DATAAGENT_SANDBOX_IMAGE:-agentscope-registry.ap-southeast-1.cr.aliyuncs.com/agentscope/runtime-sandbox-base:latest}
+    command: ["true"]
+    restart: "no"
+
+  backend:
+    build:
+      context: .
+      args:
+        DATAAGENT_TORCH_WHEEL_URL: ${DATAAGENT_TORCH_WHEEL_URL:-https://download-r2.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp311-cp311-linux_x86_64.whl}
+        DATAAGENT_PYPI_INDEX_URL: ${DATAAGENT_PYPI_INDEX_URL:-https://pypi.org/simple}
+    image: dataagent-python-backend:local
+    gpus: all
+    environment:
+      DATAAGENT_MANAGEMENT_DATABASE_URL: mysql+asyncmy://dataagent:${DATAAGENT_MYSQL_PASSWORD:-dataagent}@mysql:3306/saa_data_agent?charset=utf8mb4
+      DATAAGENT_REDIS_URL: redis://redis:6379/0
+      DATAAGENT_REDIS_PASSWORD: ${DATAAGENT_REDIS_PASSWORD:-dataagent}
+      DATAAGENT_REDIS_REQUIRED: "true"
+      DATAAGENT_VECTOR_FILE_PATH: /app/data/vectorstore.json
+      DATAAGENT_FILE_PATH: /app/uploads
+      DATAAGENT_MODEL_MODE: ${DATAAGENT_MODEL_MODE:-database}
+      DATAAGENT_EMBEDDING_MODE: ${DATAAGENT_EMBEDDING_MODE:-local_bge_m3}
+      DATAAGENT_LOCAL_EMBEDDING_DEVICE: ${DATAAGENT_LOCAL_EMBEDDING_DEVICE:-cuda}
+      DATAAGENT_LOCAL_EMBEDDING_CACHE_DIR: /app/data/models
+      DATAAGENT_SANDBOX_DOCKER_HOST: unix:///var/run/docker.sock
+      DATAAGENT_SANDBOX_IMAGE: ${DATAAGENT_SANDBOX_IMAGE:-agentscope-registry.ap-southeast-1.cr.aliyuncs.com/agentscope/runtime-sandbox-base:latest}
+      DATAAGENT_TIKA_URL: http://tika:9998
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "8065:8065"
+    volumes:
+      - dataagent-data:/app/data
+      - dataagent-uploads:/app/uploads
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mysql-data:
+        condition: service_healthy
+      postgres-data:
+        condition: service_healthy
+      sandbox-image:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  mcp:
+    image: dataagent-python-backend:local
+    command: ["dataagent-mcp"]
+    gpus: all
+    environment:
+      DATAAGENT_MANAGEMENT_DATABASE_URL: mysql+asyncmy://dataagent:${DATAAGENT_MYSQL_PASSWORD:-dataagent}@mysql:3306/saa_data_agent?charset=utf8mb4
+      DATAAGENT_REDIS_URL: redis://redis:6379/0
+      DATAAGENT_REDIS_PASSWORD: ${DATAAGENT_REDIS_PASSWORD:-dataagent}
+      DATAAGENT_REDIS_REQUIRED: "true"
+      DATAAGENT_VECTOR_FILE_PATH: /app/data/vectorstore.json
+      DATAAGENT_FILE_PATH: /app/uploads
+      DATAAGENT_MODEL_MODE: ${DATAAGENT_MODEL_MODE:-database}
+      DATAAGENT_EMBEDDING_MODE: ${DATAAGENT_EMBEDDING_MODE:-local_bge_m3}
+      DATAAGENT_LOCAL_EMBEDDING_DEVICE: ${DATAAGENT_LOCAL_EMBEDDING_DEVICE:-cuda}
+      DATAAGENT_LOCAL_EMBEDDING_CACHE_DIR: /app/data/models
+      DATAAGENT_SANDBOX_DOCKER_HOST: unix:///var/run/docker.sock
+      DATAAGENT_MCP_HOST: 0.0.0.0
+      DATAAGENT_MCP_PORT: 8066
+      DATAAGENT_MCP_TRANSPORT: streamable-http
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "8066:8066"
+    volumes:
+      - dataagent-data:/app/data
+      - dataagent-uploads:/app/uploads
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket; s=socket.create_connection(('127.0.0.1',8066),3); s.close()",
+        ]
+      interval: 20s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NUXT_BACKEND_URL: http://backend:8065
+    image: dataagent-python-frontend:local
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  tika:
+    image: apache/tika:latest-full
+    profiles: ["tika"]
+    restart: unless-stopped
+
+volumes:
+  dataagent-data:
+  dataagent-uploads:
+  dataagent-mysql:
+  dataagent-redis:
+  dataagent-demo-mysql:
+  dataagent-demo-postgres:

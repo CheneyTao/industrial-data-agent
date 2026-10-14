@@ -1,0 +1,65 @@
+{
+  "source_id": "industrial_pdm",
+  "display_name": "Microsoft Azure Predictive Maintenance 扩展数据源",
+  "database": "industrial_pdm",
+  "dialects": ["mysql", "sqlite"],
+  "default_time_column": "datetime",
+  "entity_key": "machineID",
+  "fact_tables": [
+    "pdm_machines",
+    "pdm_telemetry",
+    "pdm_errors",
+    "pdm_maint",
+    "pdm_failures"
+  ],
+  "semantic_tables": [
+    "dim_machine_models"
+  ],
+  "synthetic_derived_tables": [
+    "synthetic_fault_reports",
+    "synthetic_operator_logs",
+    "synthetic_maintenance_notes",
+    "synthetic_work_orders",
+    "synthetic_parts_usage",
+    "synthetic_daily_operations"
+  ],
+  "analysis_tables": [
+    "analysis_runs",
+    "analysis_step_logs",
+    "detected_anomalies",
+    "root_cause_candidates",
+    "analysis_reports"
+  ],
+  "relationships": [
+    "pdm_*.machineID -> pdm_machines.machineID",
+    "pdm_machines.model -> dim_machine_models.source_model_code",
+    "synthetic_daily_operations.model -> dim_machine_models.source_model_code",
+    "synthetic_fault_reports(machineID, datetime, component) -> pdm_failures(machineID, datetime, failure)",
+    "synthetic_operator_logs.linked_fault_id -> synthetic_fault_reports.fault_id",
+    "synthetic_maintenance_notes.linked_fault_id -> synthetic_fault_reports.fault_id",
+    "synthetic_work_orders.linked_fault_id -> synthetic_fault_reports.fault_id",
+    "synthetic_work_orders.linked_maint_note_id -> synthetic_maintenance_notes.maint_note_id",
+    "synthetic_parts_usage.work_order_id -> synthetic_work_orders.work_order_id",
+    "synthetic_daily_operations.machineID -> pdm_machines.machineID"
+  ],
+  "evidence_policy": {
+    "source": "pdm_* 是未修改的公开样例来源层；来源不等于已核验的真实现场数据",
+    "synthetic": "所有 synthetic_* 表只能用于演示、检索、测试和候选生成，回答必须明确标注合成属性",
+    "rca": "输出排序后的根因候选及证据，不输出未经现场验证的确定性因果结论",
+    "model_alias": "A/B/C/D 型机组是中性演示别名；对外显示别名时必须同时保留可追溯的 model1-model4 来源编码"
+  },
+  "recommended_agent_tables": [
+    "dim_machine_models",
+    "pdm_machines",
+    "pdm_telemetry",
+    "pdm_errors",
+    "pdm_maint",
+    "pdm_failures",
+    "synthetic_work_orders",
+    "synthetic_parts_usage",
+    "synthetic_daily_operations",
+    "v_machine_reliability",
+    "v_monthly_operations_kpi",
+    "v_work_order_kpi"
+  ]
+}

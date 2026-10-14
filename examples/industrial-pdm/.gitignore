@@ -1,0 +1,14 @@
+.env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Reproducible runtime artifacts
+generated/
+
+# Public sample source snapshots are large and have separate licensing.
+original/*.csv
+
+# Deterministic outputs; rebuild with scripts/generate_synthetic_data.py.
+synthetic/*.csv
+synthetic/manifest.json

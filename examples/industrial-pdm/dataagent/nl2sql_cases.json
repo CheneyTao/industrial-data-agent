@@ -1,0 +1,186 @@
+{
+  "version": "1.1",
+  "purpose": "用于在 DataAgent 中输入自然语言问题，并用经过本地执行验证的参考 SQL 对照结果。参考 SQL 不是自然语言生成器。",
+  "cases": [
+    {
+      "id": "Q01",
+      "difficulty": "基础",
+      "question": "这个数据源一共有多少台设备、多少条遥测、错误、维护和故障记录？",
+      "evidence_class": "source",
+      "expected_columns": ["machine_count", "telemetry_count", "error_count", "maintenance_count", "failure_count"],
+      "sqlite_sql": "SELECT (SELECT COUNT(*) FROM pdm_machines) AS machine_count, (SELECT COUNT(*) FROM pdm_telemetry) AS telemetry_count, (SELECT COUNT(*) FROM pdm_errors) AS error_count, (SELECT COUNT(*) FROM pdm_maint) AS maintenance_count, (SELECT COUNT(*) FROM pdm_failures) AS failure_count",
+      "mysql_sql": "SELECT (SELECT COUNT(*) FROM pdm_machines) AS machine_count, (SELECT COUNT(*) FROM pdm_telemetry) AS telemetry_count, (SELECT COUNT(*) FROM pdm_errors) AS error_count, (SELECT COUNT(*) FROM pdm_maint) AS maintenance_count, (SELECT COUNT(*) FROM pdm_failures) AS failure_count"
+    },
+    {
+      "id": "Q02",
+      "difficulty": "基础",
+      "question": "按月份统计故障次数并按时间排序。",
+      "evidence_class": "source",
+      "expected_columns": ["failure_month", "failure_count"],
+      "sqlite_sql": "SELECT substr(datetime, 1, 7) AS failure_month, COUNT(*) AS failure_count FROM pdm_failures GROUP BY substr(datetime, 1, 7) ORDER BY failure_month",
+      "mysql_sql": "SELECT DATE_FORMAT(datetime, '%Y-%m') AS failure_month, COUNT(*) AS failure_count FROM pdm_failures GROUP BY DATE_FORMAT(datetime, '%Y-%m') ORDER BY failure_month"
+    },
+    {
+      "id": "Q03",
+      "difficulty": "基础",
+      "question": "各部件分别发生了多少次故障？哪个部件最多？",
+      "evidence_class": "source",
+      "expected_columns": ["component", "failure_count"],
+      "sqlite_sql": "SELECT failure AS component, COUNT(*) AS failure_count FROM pdm_failures GROUP BY failure ORDER BY failure_count DESC, component",
+      "mysql_sql": "SELECT failure AS component, COUNT(*) AS failure_count FROM pdm_failures GROUP BY failure ORDER BY failure_count DESC, component"
+    },
+    {
+      "id": "Q04",
+      "difficulty": "中等",
+      "question": "比较不同设备型号的每千观测小时故障率。",
+      "evidence_class": "source_calculation",
+      "expected_columns": ["model_code", "model_name", "machine_count", "failure_count", "observed_hours", "failures_per_1000_hours"],
+      "sqlite_sql": "SELECT m.model AS model_code,d.display_name_zh AS model_name,COUNT(*) AS machine_count,SUM(COALESCE(f.failure_count,0)) AS failure_count,SUM(COALESCE(t.observed_hours,0)) AS observed_hours,ROUND(SUM(COALESCE(f.failure_count,0))*1000.0/NULLIF(SUM(COALESCE(t.observed_hours,0)),0),4) AS failures_per_1000_hours FROM pdm_machines m JOIN dim_machine_models d ON d.source_model_code=m.model LEFT JOIN (SELECT machineID,COUNT(*) AS failure_count FROM pdm_failures GROUP BY machineID) f ON f.machineID=m.machineID LEFT JOIN (SELECT machineID,COUNT(*) AS observed_hours FROM pdm_telemetry GROUP BY machineID) t ON t.machineID=m.machineID GROUP BY m.model,d.display_name_zh ORDER BY failures_per_1000_hours DESC",
+      "mysql_sql": "SELECT m.model AS model_code,d.display_name_zh AS model_name,COUNT(*) AS machine_count,SUM(COALESCE(f.failure_count,0)) AS failure_count,SUM(COALESCE(t.observed_hours,0)) AS observed_hours,ROUND(SUM(COALESCE(f.failure_count,0))*1000.0/NULLIF(SUM(COALESCE(t.observed_hours,0)),0),4) AS failures_per_1000_hours FROM pdm_machines m JOIN dim_machine_models d ON d.source_model_code=m.model LEFT JOIN (SELECT machineID,COUNT(*) AS failure_count FROM pdm_failures GROUP BY machineID) f ON f.machineID=m.machineID LEFT JOIN (SELECT machineID,COUNT(*) AS observed_hours FROM pdm_telemetry GROUP BY machineID) t ON t.machineID=m.machineID GROUP BY m.model,d.display_name_zh ORDER BY failures_per_1000_hours DESC"
+    },
+    {
+      "id": "Q05",
+      "difficulty": "基础",
+      "question": "列出故障率最高的10台设备，同时显示型号、机龄、错误数和维护数。",
+      "evidence_class": "source_calculation",
+      "expected_columns": ["machineID", "model_code", "model_name", "age", "error_count", "maintenance_count", "failure_count", "failures_per_1000_observed_hours"],
+      "sqlite_sql": "SELECT machineID,model_code,model_name,age,error_count,maintenance_count,failure_count,ROUND(failures_per_1000_observed_hours,4) AS failures_per_1000_observed_hours FROM v_machine_reliability ORDER BY failures_per_1000_observed_hours DESC,error_count DESC,machineID LIMIT 10",
+      "mysql_sql": "SELECT machineID,model_code,model_name,age,error_count,maintenance_count,failure_count,ROUND(failures_per_1000_observed_hours,4) AS failures_per_1000_observed_hours FROM v_machine_reliability ORDER BY failures_per_1000_observed_hours DESC,error_count DESC,machineID LIMIT 10"
+    },
+    {
+      "id": "Q06",
+      "difficulty": "中等",
+      "question": "来源故障中有多少条能在同设备、同时间、同部件匹配到来源维护？匹配率是多少？",
+      "evidence_class": "source_plus_derived_alignment",
+      "expected_columns": ["failure_count", "exact_maintenance_matches", "exact_match_pct"],
+      "sqlite_sql": "SELECT COUNT(*) AS failure_count, SUM(source_maintenance_exact_match) AS exact_maintenance_matches, ROUND(SUM(source_maintenance_exact_match)*100.0/COUNT(*),2) AS exact_match_pct FROM synthetic_fault_reports",
+      "mysql_sql": "SELECT COUNT(*) AS failure_count, SUM(source_maintenance_exact_match) AS exact_maintenance_matches, ROUND(SUM(source_maintenance_exact_match)*100.0/COUNT(*),2) AS exact_match_pct FROM synthetic_fault_reports"
+    },
+    {
+      "id": "Q07",
+      "difficulty": "进阶",
+      "question": "不同错误代码发生后72小时内出现来源故障的比例是多少？",
+      "evidence_class": "source_calculation",
+      "expected_columns": ["error_code", "error_count", "followed_by_failure_72h", "conversion_pct"],
+      "sqlite_sql": "SELECT e.errorID AS error_code, COUNT(*) AS error_count, SUM(CASE WHEN EXISTS (SELECT 1 FROM pdm_failures f WHERE f.machineID=e.machineID AND f.datetime>e.datetime AND f.datetime<=datetime(e.datetime,'+72 hours')) THEN 1 ELSE 0 END) AS followed_by_failure_72h, ROUND(SUM(CASE WHEN EXISTS (SELECT 1 FROM pdm_failures f WHERE f.machineID=e.machineID AND f.datetime>e.datetime AND f.datetime<=datetime(e.datetime,'+72 hours')) THEN 1 ELSE 0 END)*100.0/COUNT(*),2) AS conversion_pct FROM pdm_errors e GROUP BY e.errorID ORDER BY conversion_pct DESC,error_code",
+      "mysql_sql": "SELECT e.errorID AS error_code, COUNT(*) AS error_count, SUM(CASE WHEN EXISTS (SELECT 1 FROM pdm_failures f WHERE f.machineID=e.machineID AND f.datetime>e.datetime AND f.datetime<=DATE_ADD(e.datetime,INTERVAL 72 HOUR)) THEN 1 ELSE 0 END) AS followed_by_failure_72h, ROUND(SUM(CASE WHEN EXISTS (SELECT 1 FROM pdm_failures f WHERE f.machineID=e.machineID AND f.datetime>e.datetime AND f.datetime<=DATE_ADD(e.datetime,INTERVAL 72 HOUR)) THEN 1 ELSE 0 END)*100.0/COUNT(*),2) AS conversion_pct FROM pdm_errors e GROUP BY e.errorID ORDER BY conversion_pct DESC,error_code"
+    },
+    {
+      "id": "Q08",
+      "difficulty": "基础",
+      "question": "按部件和工单类型汇总合成工单数、停机小时、人工成本、备件成本和总成本。",
+      "evidence_class": "synthetic_demo",
+      "expected_columns": ["component", "work_order_type", "work_order_count", "downtime_hours", "labor_cost", "parts_cost", "total_cost"],
+      "sqlite_sql": "SELECT component,work_order_type,work_order_count,downtime_hours,labor_cost,parts_cost,total_cost FROM v_work_order_kpi ORDER BY total_cost DESC,component",
+      "mysql_sql": "SELECT component,work_order_type,work_order_count,downtime_hours,labor_cost,parts_cost,total_cost FROM v_work_order_kpi ORDER BY total_cost DESC,component"
+    },
+    {
+      "id": "Q09",
+      "difficulty": "基础",
+      "question": "合成维修总成本按月如何变化？",
+      "evidence_class": "synthetic_demo",
+      "expected_columns": ["work_month", "work_order_count", "total_cost", "downtime_hours"],
+      "sqlite_sql": "SELECT substr(opened_at,1,7) AS work_month, COUNT(*) AS work_order_count, ROUND(SUM(total_cost),2) AS total_cost, ROUND(SUM(downtime_hours),2) AS downtime_hours FROM synthetic_work_orders GROUP BY substr(opened_at,1,7) ORDER BY work_month",
+      "mysql_sql": "SELECT DATE_FORMAT(opened_at,'%Y-%m') AS work_month, COUNT(*) AS work_order_count, ROUND(SUM(total_cost),2) AS total_cost, ROUND(SUM(downtime_hours),2) AS downtime_hours FROM synthetic_work_orders GROUP BY DATE_FORMAT(opened_at,'%Y-%m') ORDER BY work_month"
+    },
+    {
+      "id": "Q10",
+      "difficulty": "基础",
+      "question": "比较不同型号的合成平均OEE、产量、良品量、报废量和能耗。",
+      "evidence_class": "synthetic_demo",
+      "expected_columns": ["model_code", "model_name", "avg_oee_pct", "production_units", "good_units", "scrap_units", "energy_kwh"],
+      "sqlite_sql": "SELECT o.model AS model_code,d.display_name_zh AS model_name,ROUND(AVG(o.oee_pct),2) AS avg_oee_pct,SUM(o.production_units) AS production_units,SUM(o.good_units) AS good_units,SUM(o.scrap_units) AS scrap_units,ROUND(SUM(o.energy_kwh),2) AS energy_kwh FROM synthetic_daily_operations o JOIN dim_machine_models d ON d.source_model_code=o.model GROUP BY o.model,d.display_name_zh ORDER BY avg_oee_pct DESC",
+      "mysql_sql": "SELECT o.model AS model_code,d.display_name_zh AS model_name,ROUND(AVG(o.oee_pct),2) AS avg_oee_pct,SUM(o.production_units) AS production_units,SUM(o.good_units) AS good_units,SUM(o.scrap_units) AS scrap_units,ROUND(SUM(o.energy_kwh),2) AS energy_kwh FROM synthetic_daily_operations o JOIN dim_machine_models d ON d.source_model_code=o.model GROUP BY o.model,d.display_name_zh ORDER BY avg_oee_pct DESC"
+    },
+    {
+      "id": "Q11",
+      "difficulty": "中等",
+      "question": "找出合成平均OEE最低的10台设备，并显示来源故障数。",
+      "evidence_class": "mixed_source_and_synthetic",
+      "expected_columns": ["machineID", "model_code", "model_name", "avg_oee_pct", "failure_count"],
+      "sqlite_sql": "SELECT o.machineID,o.model AS model_code,d.display_name_zh AS model_name,ROUND(AVG(o.oee_pct),2) AS avg_oee_pct,COALESCE(f.failure_count,0) AS failure_count FROM synthetic_daily_operations o JOIN dim_machine_models d ON d.source_model_code=o.model LEFT JOIN (SELECT machineID,COUNT(*) AS failure_count FROM pdm_failures GROUP BY machineID) f ON f.machineID=o.machineID GROUP BY o.machineID,o.model,d.display_name_zh,f.failure_count ORDER BY avg_oee_pct ASC,failure_count DESC,o.machineID LIMIT 10",
+      "mysql_sql": "SELECT o.machineID,o.model AS model_code,d.display_name_zh AS model_name,ROUND(AVG(o.oee_pct),2) AS avg_oee_pct,COALESCE(f.failure_count,0) AS failure_count FROM synthetic_daily_operations o JOIN dim_machine_models d ON d.source_model_code=o.model LEFT JOIN (SELECT machineID,COUNT(*) AS failure_count FROM pdm_failures GROUP BY machineID) f ON f.machineID=o.machineID GROUP BY o.machineID,o.model,d.display_name_zh,f.failure_count ORDER BY avg_oee_pct ASC,failure_count DESC,o.machineID LIMIT 10"
+    },
+    {
+      "id": "Q12",
+      "difficulty": "中等",
+      "question": "来源故障日与无故障日的合成平均停机、OEE和报废率有什么差别？",
+      "evidence_class": "mixed_source_and_synthetic",
+      "expected_columns": ["day_type", "machine_days", "avg_downtime_hours", "avg_oee_pct", "scrap_pct"],
+      "sqlite_sql": "SELECT CASE WHEN source_failure_count>0 THEN 'source_failure_day' ELSE 'no_source_failure_day' END AS day_type,COUNT(*) AS machine_days,ROUND(AVG(downtime_hours),3) AS avg_downtime_hours,ROUND(AVG(oee_pct),3) AS avg_oee_pct,ROUND(SUM(scrap_units)*100.0/NULLIF(SUM(production_units),0),3) AS scrap_pct FROM synthetic_daily_operations GROUP BY CASE WHEN source_failure_count>0 THEN 'source_failure_day' ELSE 'no_source_failure_day' END ORDER BY day_type",
+      "mysql_sql": "SELECT CASE WHEN source_failure_count>0 THEN 'source_failure_day' ELSE 'no_source_failure_day' END AS day_type,COUNT(*) AS machine_days,ROUND(AVG(downtime_hours),3) AS avg_downtime_hours,ROUND(AVG(oee_pct),3) AS avg_oee_pct,ROUND(SUM(scrap_units)*100.0/NULLIF(SUM(production_units),0),3) AS scrap_pct FROM synthetic_daily_operations GROUP BY CASE WHEN source_failure_count>0 THEN 'source_failure_day' ELSE 'no_source_failure_day' END ORDER BY day_type"
+    },
+    {
+      "id": "Q13",
+      "difficulty": "基础",
+      "question": "按型号统计合成总产量、良品量和报废率。",
+      "evidence_class": "synthetic_demo",
+      "expected_columns": ["model_code", "model_name", "production_units", "good_units", "scrap_units", "scrap_pct"],
+      "sqlite_sql": "SELECT o.model AS model_code,d.display_name_zh AS model_name,SUM(o.production_units) AS production_units,SUM(o.good_units) AS good_units,SUM(o.scrap_units) AS scrap_units,ROUND(SUM(o.scrap_units)*100.0/NULLIF(SUM(o.production_units),0),3) AS scrap_pct FROM synthetic_daily_operations o JOIN dim_machine_models d ON d.source_model_code=o.model GROUP BY o.model,d.display_name_zh ORDER BY scrap_pct DESC",
+      "mysql_sql": "SELECT o.model AS model_code,d.display_name_zh AS model_name,SUM(o.production_units) AS production_units,SUM(o.good_units) AS good_units,SUM(o.scrap_units) AS scrap_units,ROUND(SUM(o.scrap_units)*100.0/NULLIF(SUM(o.production_units),0),3) AS scrap_pct FROM synthetic_daily_operations o JOIN dim_machine_models d ON d.source_model_code=o.model GROUP BY o.model,d.display_name_zh ORDER BY scrap_pct DESC"
+    },
+    {
+      "id": "Q14",
+      "difficulty": "中等",
+      "question": "哪些备件的合成消耗金额最高？列出前10名。",
+      "evidence_class": "synthetic_demo",
+      "expected_columns": ["part_code", "part_name", "total_quantity", "usage_count", "total_cost"],
+      "sqlite_sql": "SELECT part_code,part_name,SUM(quantity) AS total_quantity,COUNT(*) AS usage_count,ROUND(SUM(total_cost),2) AS total_cost FROM synthetic_parts_usage GROUP BY part_code,part_name ORDER BY total_cost DESC LIMIT 10",
+      "mysql_sql": "SELECT part_code,part_name,SUM(quantity) AS total_quantity,COUNT(*) AS usage_count,ROUND(SUM(total_cost),2) AS total_cost FROM synthetic_parts_usage GROUP BY part_code,part_name ORDER BY total_cost DESC LIMIT 10"
+    },
+    {
+      "id": "Q15",
+      "difficulty": "中等",
+      "question": "按机龄区间比较设备数、错误数、故障数和每千观测小时故障率。",
+      "evidence_class": "source_calculation",
+      "expected_columns": ["age_band", "machine_count", "error_count", "failure_count", "failures_per_1000_hours"],
+      "sqlite_sql": "SELECT CASE WHEN age<=5 THEN '0-5' WHEN age<=10 THEN '6-10' WHEN age<=15 THEN '11-15' ELSE '16+' END AS age_band,COUNT(*) AS machine_count,SUM(error_count) AS error_count,SUM(failure_count) AS failure_count,ROUND(SUM(failure_count)*1000.0/NULLIF(SUM(observed_hours),0),4) AS failures_per_1000_hours FROM v_machine_reliability GROUP BY CASE WHEN age<=5 THEN '0-5' WHEN age<=10 THEN '6-10' WHEN age<=15 THEN '11-15' ELSE '16+' END ORDER BY age_band",
+      "mysql_sql": "SELECT CASE WHEN age<=5 THEN '0-5' WHEN age<=10 THEN '6-10' WHEN age<=15 THEN '11-15' ELSE '16+' END AS age_band,COUNT(*) AS machine_count,SUM(error_count) AS error_count,SUM(failure_count) AS failure_count,ROUND(SUM(failure_count)*1000.0/NULLIF(SUM(observed_hours),0),4) AS failures_per_1000_hours FROM v_machine_reliability GROUP BY CASE WHEN age<=5 THEN '0-5' WHEN age<=10 THEN '6-10' WHEN age<=15 THEN '11-15' ELSE '16+' END ORDER BY age_band"
+    },
+    {
+      "id": "Q16",
+      "difficulty": "进阶",
+      "question": "每种故障部件在故障前72小时内平均有多少条来源错误？",
+      "evidence_class": "source_calculation",
+      "expected_columns": ["component", "failure_count", "avg_pre_failure_errors_72h"],
+      "sqlite_sql": "SELECT f.failure AS component,COUNT(*) AS failure_count,ROUND(AVG((SELECT COUNT(*) FROM pdm_errors e WHERE e.machineID=f.machineID AND e.datetime>=datetime(f.datetime,'-72 hours') AND e.datetime<f.datetime)),3) AS avg_pre_failure_errors_72h FROM pdm_failures f GROUP BY f.failure ORDER BY avg_pre_failure_errors_72h DESC",
+      "mysql_sql": "SELECT f.failure AS component,COUNT(*) AS failure_count,ROUND(AVG((SELECT COUNT(*) FROM pdm_errors e WHERE e.machineID=f.machineID AND e.datetime>=DATE_SUB(f.datetime,INTERVAL 72 HOUR) AND e.datetime<f.datetime)),3) AS avg_pre_failure_errors_72h FROM pdm_failures f GROUP BY f.failure ORDER BY avg_pre_failure_errors_72h DESC"
+    },
+    {
+      "id": "Q17",
+      "difficulty": "基础",
+      "question": "展示设备90在2015年6月1日至6月5日的来源事件和合成日志时间线。",
+      "evidence_class": "mixed_source_and_synthetic",
+      "expected_columns": ["machineID", "event_time", "event_type", "event_code", "fault_id", "data_origin", "synthetic_text_flag"],
+      "sqlite_sql": "SELECT machineID,event_time,event_type,event_code,fault_id,data_origin,synthetic_text_flag FROM v_event_timeline WHERE machineID=90 AND event_time>='2015-06-01 00:00:00' AND event_time<'2015-06-06 00:00:00' ORDER BY event_time,event_type",
+      "mysql_sql": "SELECT machineID,event_time,event_type,event_code,fault_id,data_origin,synthetic_text_flag FROM v_event_timeline WHERE machineID=90 AND event_time>='2015-06-01 00:00:00' AND event_time<'2015-06-06 00:00:00' ORDER BY event_time,event_type"
+    },
+    {
+      "id": "Q18",
+      "difficulty": "基础",
+      "question": "合成规则根因标签的分布是什么？",
+      "evidence_class": "synthetic_demo",
+      "expected_columns": ["root_cause", "event_count", "avg_dominant_z"],
+      "sqlite_sql": "SELECT root_cause,COUNT(*) AS event_count,ROUND(AVG(dominant_z),3) AS avg_dominant_z FROM synthetic_fault_reports GROUP BY root_cause ORDER BY event_count DESC,root_cause",
+      "mysql_sql": "SELECT root_cause,COUNT(*) AS event_count,ROUND(AVG(dominant_z),3) AS avg_dominant_z FROM synthetic_fault_reports GROUP BY root_cause ORDER BY event_count DESC,root_cause"
+    },
+    {
+      "id": "Q19",
+      "difficulty": "中等",
+      "question": "列出没有同时间同部件来源维护匹配的故障，显示设备、时间、部件和合成候选根因。",
+      "evidence_class": "source_plus_derived_alignment",
+      "expected_columns": ["machineID", "datetime", "component", "root_cause", "source_maintenance_exact_match"],
+      "sqlite_sql": "SELECT machineID,datetime,component,root_cause,source_maintenance_exact_match FROM synthetic_fault_reports WHERE source_maintenance_exact_match=0 ORDER BY datetime,machineID,component",
+      "mysql_sql": "SELECT machineID,datetime,component,root_cause,source_maintenance_exact_match FROM synthetic_fault_reports WHERE source_maintenance_exact_match=0 ORDER BY datetime,machineID,component"
+    },
+    {
+      "id": "Q20",
+      "difficulty": "中等",
+      "question": "合成总成本最高的10张工单是什么？同时显示设备型号、机龄、部件和是否关联来源故障。",
+      "evidence_class": "mixed_source_and_synthetic",
+      "expected_columns": ["work_order_id", "machineID", "model_code", "model_name", "age", "component", "work_order_type", "total_cost", "linked_source_failure"],
+      "sqlite_sql": "SELECT w.work_order_id,w.machineID,m.model AS model_code,d.display_name_zh AS model_name,m.age,w.component,w.work_order_type,w.total_cost,CASE WHEN w.linked_fault_id IS NULL OR w.linked_fault_id='' THEN 0 ELSE 1 END AS linked_source_failure FROM synthetic_work_orders w JOIN pdm_machines m ON m.machineID=w.machineID JOIN dim_machine_models d ON d.source_model_code=m.model ORDER BY w.total_cost DESC,w.work_order_id LIMIT 10",
+      "mysql_sql": "SELECT w.work_order_id,w.machineID,m.model AS model_code,d.display_name_zh AS model_name,m.age,w.component,w.work_order_type,w.total_cost,CASE WHEN w.linked_fault_id IS NULL OR w.linked_fault_id='' THEN 0 ELSE 1 END AS linked_source_failure FROM synthetic_work_orders w JOIN pdm_machines m ON m.machineID=w.machineID JOIN dim_machine_models d ON d.source_model_code=m.model ORDER BY w.total_cost DESC,w.work_order_id LIMIT 10"
+    }
+  ]
+}

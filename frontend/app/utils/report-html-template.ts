@@ -1,0 +1,198 @@
+/*
+ * Copyright 2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+const MARKED_URL = 'https://mirrors.sustech.edu.cn/cdnjs/ajax/libs/marked/12.0.0/marked.min.js';
+const ECHARTS_URL = 'https://mirrors.sustech.edu.cn/cdnjs/ajax/libs/echarts/5.5.0/echarts.min.js';
+
+function escapeForHtml(text: string): string {
+	return text
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;');
+}
+
+type PositionedChartPart = {
+	top?: number | null;
+	[key: string]: unknown;
+};
+
+export type ChartLayoutOption = {
+	title?: PositionedChartPart | PositionedChartPart[];
+	legend?: PositionedChartPart | PositionedChartPart[];
+	grid?: PositionedChartPart | PositionedChartPart[];
+	[key: string]: unknown;
+};
+
+export function normalizeChartLayout(
+	option: ChartLayoutOption,
+): ChartLayoutOption {
+	const titles = option.title
+		? Array.isArray(option.title)
+			? option.title
+			: [option.title]
+		: [];
+	const legends = option.legend
+		? Array.isArray(option.legend)
+			? option.legend
+			: [option.legend]
+		: [];
+	titles.forEach((title) => {
+		if (title && title.top == null) title.top = 10;
+	});
+	legends.forEach((legend) => {
+		if (legend && legend.top == null)
+			legend.top = titles.length > 0 ? 50 : 10;
+	});
+
+	const reservedTop =
+		titles.length > 0 && legends.length > 0
+			? 90
+			: titles.length > 0 || legends.length > 0
+				? 60
+				: 40;
+	const grids = option.grid
+		? Array.isArray(option.grid)
+			? option.grid
+			: [option.grid]
+		: [{}];
+	grids.forEach((grid) => {
+		if (grid.top == null) grid.top = reservedTop;
+		if (grid.containLabel == null) grid.containLabel = true;
+	});
+	option.grid = Array.isArray(option.grid) ? grids : grids[0];
+	return option;
+}
+
+function sanitizeRenderedHtml(rendered: string): string {
+	const template = document.createElement('template');
+	template.innerHTML = rendered;
+	template.content
+		.querySelectorAll('script,iframe,object,embed,form,meta,link,base,svg,math')
+		.forEach((element) => element.remove());
+	template.content.querySelectorAll('*').forEach((element) => {
+		for (const attribute of Array.from(element.attributes)) {
+			const name = attribute.name.toLowerCase();
+			if (
+				name.startsWith('on') ||
+				['srcdoc', 'formaction', 'style', 'xlink:href'].includes(name)
+			) {
+				element.removeAttribute(attribute.name);
+				continue;
+			}
+			if (name === 'href' || name === 'src') {
+				const value = attribute.value.trim();
+				const relative = /^(?:#|\/|\.\/|\.\.\/)/.test(value);
+				let allowed = relative;
+				try {
+					const protocol = new URL(value, 'https://dataagent.invalid').protocol;
+					allowed =
+						allowed ||
+						['http:', 'https:', 'mailto:', 'tel:'].includes(protocol) ||
+						(name === 'src' && /^data:image\/(?:png|jpeg|gif|webp);/i.test(value));
+				} catch {
+					allowed = false;
+				}
+				if (!allowed) element.removeAttribute(attribute.name);
+			}
+		}
+		if (element.tagName === 'A') {
+			element.setAttribute('rel', 'noopener noreferrer');
+		}
+	});
+	return template.innerHTML;
+}
+
+export function buildReportHtml(markdownContent: string): string {
+	const escapedContent = escapeForHtml(markdownContent);
+
+	return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>分析报告</title>
+<script src="${MARKED_URL}"></script>
+<script src="${ECHARTS_URL}"></script>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; padding: 20px; background-color: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: #374151; line-height: 1.6; }
+.container { max-width: 900px; margin: 0 auto; background-color: #ffffff; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
+h1 { font-size: 2.25rem; font-weight: 800; color: #1e3a8a; margin-top: 0; margin-bottom: 1.5rem; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.5rem; }
+h2 { font-size: 1.5rem; font-weight: 700; color: #2563eb; margin-top: 2.5rem; margin-bottom: 1rem; border-left: 5px solid #2563eb; padding-left: 12px; }
+h3 { font-size: 1.25rem; font-weight: 600; color: #1f2937; margin-top: 1.5rem; margin-bottom: 0.75rem; }
+p { margin-bottom: 1rem; }
+ul, ol { margin-bottom: 1rem; padding-left: 1.5rem; }
+li { margin-bottom: 0.25rem; }
+table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+th { background: #f1f5f9; padding: 8px 12px; border: 1px solid #e2e8f0; font-weight: 600; font-size: 13px; text-align: left; }
+td { padding: 8px 12px; border: 1px solid #e8edf2; font-size: 13px; }
+tr:nth-child(even) td { background: #f8fafc; }
+code { background-color: #f1f5f9; padding: 0.2rem 0.4rem; border-radius: 0.25rem; font-size: 0.875em; color: #d946ef; font-family: monospace; }
+pre { background: #1e293b; color: #f8fafc; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; }
+pre code { background: transparent; color: inherit; padding: 0; }
+.chart-box { width: 100%; height: 450px; margin: 30px 0; border: 1px solid #e2e8f0; border-radius: 8px; background-color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.chart-error { display: flex; align-items: center; justify-content: center; height: 100%; color: #ef4444; background-color: #fef2f2; border: 1px dashed #ef4444; border-radius: 8px; }
+</style>
+</head>
+<body>
+<div class="container">
+<div id="raw-markdown" style="display:none;">${escapedContent}</div>
+<div id="render-target" class="markdown-body"></div>
+</div>
+<script>
+${normalizeChartLayout.toString()}
+${sanitizeRenderedHtml.toString()}
+
+window.onload = function() {
+  if (typeof marked === 'undefined') {
+    document.getElementById('render-target').innerHTML = '<p style="color:red;">Marked库加载失败，请检查网络</p>';
+    return;
+  }
+  var rawDiv = document.getElementById('raw-markdown');
+  if (!rawDiv) return;
+  var rawText = rawDiv.innerText;
+  var renderer = new marked.Renderer();
+  renderer.code = function(code, language) {
+    var text = typeof code === 'object' ? code.text : String(code);
+    var lang = typeof code === 'object' ? code.lang : language;
+    if (lang === 'echarts' || lang === 'json') {
+      var id = 'chart_' + Math.random().toString(36).substr(2, 9);
+      return '<div id="' + id + '" class="chart-box" data-option="' + encodeURIComponent(text) + '"></div>';
+    }
+	var safeLanguage = String(lang || '').replace(/[^A-Za-z0-9_+.-]/g, '');
+	return '<pre><code class="language-' + safeLanguage + '">' + text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</code></pre>';
+  };
+  document.getElementById('render-target').innerHTML = sanitizeRenderedHtml(marked.parse(rawText, { renderer: renderer }));
+  if (typeof echarts !== 'undefined') {
+    document.querySelectorAll('.chart-box').forEach(function(box) {
+      try {
+        var code = decodeURIComponent(box.getAttribute('data-option'));
+        var option = normalizeChartLayout(JSON.parse(code));
+        var myChart = echarts.init(box);
+        myChart.setOption(option);
+        window.addEventListener('resize', function() { myChart.resize(); });
+      } catch(e) {
+		box.textContent = '图表渲染错误: ' + String(e instanceof Error ? e.message : e);
+		box.classList.add('chart-error');
+      }
+    });
+  }
+};
+</script>
+</body>
+</html>`;
+}

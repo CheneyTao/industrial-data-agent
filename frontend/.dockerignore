@@ -1,0 +1,9 @@
+node_modules
+.nuxt
+.output
+.cache
+.env
+.env.*
+coverage
+*.log
+*.tsbuildinfo

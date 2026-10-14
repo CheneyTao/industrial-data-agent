@@ -1,0 +1,21 @@
+# Run only with tools/report_version.ps1. `compose run --no-deps` preserves the
+# original services, images, ports and management tables.
+services:
+  backend:
+    image: dataagent-python-backend:report-v0.2.1
+    environment:
+      DATAAGENT_MANAGEMENT_DATABASE_URL: mysql+asyncmy://dataagent:${DATAAGENT_MYSQL_PASSWORD:-dataagent}@mysql:3306/saa_data_agent_v020_preview?charset=utf8mb4
+      DATAAGENT_REDIS_KEY_PREFIX: dataagent-report-v020
+      DATAAGENT_REPORT_SCHEDULER_ENABLED: "true"
+      DATAAGENT_REPORT_SCHEDULER_POLL_SECONDS: "30"
+    volumes:
+      - ./work/report-v020/analysis-runs:/app/data/analysis-runs
+      - ./work/report-v020/uploads:/app/uploads
+  mcp:
+    image: dataagent-python-backend:report-v0.2.1
+    environment:
+      DATAAGENT_MANAGEMENT_DATABASE_URL: mysql+asyncmy://dataagent:${DATAAGENT_MYSQL_PASSWORD:-dataagent}@mysql:3306/saa_data_agent_v020_preview?charset=utf8mb4
+      DATAAGENT_REDIS_KEY_PREFIX: dataagent-report-v020
+    volumes:
+      - ./work/report-v020/analysis-runs:/app/data/analysis-runs
+      - ./work/report-v020/uploads:/app/uploads
